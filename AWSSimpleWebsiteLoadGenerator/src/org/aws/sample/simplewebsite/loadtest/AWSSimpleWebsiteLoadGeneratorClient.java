@@ -4,43 +4,46 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.URL;
+import java.util.Optional;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
+import org.kohsuke.args4j.CmdLineException;
+import org.kohsuke.args4j.CmdLineParser;
+
 /**
- * Produce load (TPS) on AWSSimpleWebsite site (https://github.com/marcilio/AWSSimpleWebsite) to see your ElasticLoadBalancer and AutoScalingGroup in action!
+ * Produce load (TPS) on AWSSimpleWebsite site
+ * (https://github.com/marcilio/AWSSimpleWebsite) to see your
+ * ElasticLoadBalancer and AutoScalingGroup in action!
  * 
- * ==> Update the 'host' variable's value below to point to your AWSSimpleWebsite's URL (eg, your ELB DNS name).
+ * ==> Update the 'host' variable's value below to point to your
+ * AWSSimpleWebsite's URL (eg, your ELB DNS name).
  * 
  * @author marcilio
  *
  */
 public class AWSSimpleWebsiteLoadGeneratorClient {
 
-	// replace with your website's URL 
-	private static String host = "[replace with your Website's URL]";
-	private static String address = "http://" + host + "/AWSSimpleWebsite/LoadGeneratorServlet";
-	// the lower the value the higher the TPS
-	private static final long intervalBetweenSequentialRequests = 100;
-	// total number of requests
-	private static final int totalRequests = 100000;
-	// Thread pool used to submit concurrent request. Adjust accordingly.
+	// Thread pool used to submit concurrent request.
 	private static ThreadPoolExecutor executor = new ThreadPoolExecutor(200, 200, 0, TimeUnit.SECONDS,
 			new ArrayBlockingQueue<>(200));
-	// print log to System.out
-	private static boolean verbose = true;
 
 	public static void main(String[] args) throws IOException {
-		for (int i = 0; i < totalRequests; i++) {
-			executor.submit(new OpenURLWorker(address));
-			sleep();
+
+		Optional<CmdLineParameters> parameters = parseCmdLineParameters(args);
+		if (parameters.isPresent()) {
+			CmdLineParameters cmdLineParams = parameters.get();
+			for (int i = 0; i < cmdLineParams.getNumRequests(); i++) {
+				executor.submit(new OpenURLWorker(cmdLineParams.getWebsiteAddress(), cmdLineParams.isVerbose()));
+				sleep(cmdLineParams.getWaitTime());
+			}
 		}
 	}
 
-	private static void sleep() {
+	private static void sleep(int sleepTime) {
 		try {
-			Thread.sleep(intervalBetweenSequentialRequests);
+			Thread.sleep(sleepTime);
 		} catch (InterruptedException e) {
 		}
 	}
@@ -48,9 +51,11 @@ public class AWSSimpleWebsiteLoadGeneratorClient {
 	static class OpenURLWorker implements Runnable {
 
 		private String address;
+		private boolean verbose;
 
-		OpenURLWorker(String address) {
+		OpenURLWorker(String address, boolean verbose) {
 			this.address = address;
+			this.verbose = verbose;
 		}
 
 		@Override
@@ -59,8 +64,8 @@ public class AWSSimpleWebsiteLoadGeneratorClient {
 				URL url = new URL(address);
 				BufferedReader in = new BufferedReader(new InputStreamReader(url.openStream()));
 				String inputLine;
-				while ((inputLine = in.readLine()) != null) {
-					if (verbose) {
+				if (verbose) {
+					while ((inputLine = in.readLine()) != null) {
 						System.out.println("Thread: " + Thread.currentThread().getId() + ":\n" + inputLine);
 					}
 				}
@@ -70,6 +75,20 @@ public class AWSSimpleWebsiteLoadGeneratorClient {
 			}
 		}
 
+	}
+
+	private static Optional<CmdLineParameters> parseCmdLineParameters(String args[]) {
+		CmdLineParameters parameters = new CmdLineParameters();
+		CmdLineParser cmdLineParser = new CmdLineParser(parameters);
+		try {
+			cmdLineParser.parseArgument(args);
+			return Optional.of(parameters);
+		} catch (CmdLineException e) {
+			System.out.println("Invalid Parameters!");
+			System.out.println("Mandatory parameters: ");
+			cmdLineParser.printUsage(System.out);
+		}
+		return Optional.empty();
 	}
 
 }
